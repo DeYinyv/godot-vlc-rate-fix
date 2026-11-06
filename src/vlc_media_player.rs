@@ -2137,9 +2137,40 @@ impl VlcMediaPlayer {
     ///
     /// # Returns
     /// -1 if an error was detected, 0 otherwise (but even then, it might not actually work depending on the underlying media protocol)
+    ///
+    /// # The video output and rate changes
+    /// libvlc 4.0.x applies a new rate to the clock and to audio, but it does not
+    /// restart the video output that a `libvlc_video_set_output_callbacks` consumer
+    /// owns. That output keeps waiting on the clock it was started with, its frame
+    /// callback is never called again, and the picture freezes while the audio runs
+    /// at the new rate. Nothing in the libvlc API restarts a video output in place,
+    /// so this method seeks to the position playback is already at: a seek tears the
+    /// output down and opens a new one, which then follows the new rate.
+    ///
+    /// The seek targets the media time playback is already at (it is read after the
+    /// rate was set, so the clock does not step backwards). Decoding restarts from
+    /// the preceding keyframe, so up to one GOP of audio and video can be skipped,
+    /// and the seek is precise (`fast = false`) on purpose: a fast seek would jump
+    /// back to that keyframe and move the position. The player keeps its state, its
+    /// media and its time; no method signature or return value changes.
     #[func]
     fn set_rate(&mut self, rate: f32) -> i32 {
-        unsafe { libvlc_media_player_set_rate(self.player_ptr, rate) }
+        let previous_rate = self.get_rate();
+        let result = unsafe { libvlc_media_player_set_rate(self.player_ptr, rate) };
+        // Only a player that is running has an output that can stall. Seeking before
+        // playback starts would also be wrong: libvlc would treat the seek as the
+        // starting position. A paused player gets its output restarted on resume by
+        // libvlc itself, and was not observed to freeze here.
+        if result == 0
+            && (rate - previous_rate).abs() > f32::EPSILON
+            && unsafe { libvlc_media_player_is_playing(self.player_ptr) }
+        {
+            let time = self.get_time();
+            if time > 0 {
+                unsafe { libvlc_media_player_set_time(self.player_ptr, time, false) };
+            }
+        }
+        result
     }
 
     /// Set the movie time (in ms).\

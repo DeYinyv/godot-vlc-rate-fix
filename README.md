@@ -221,6 +221,30 @@ Common failures, and what they mean:
 - macOS, Linux arm64 and Windows arm64 are not supported.
 
 
+## 本 fork 的改动
+
+本仓库 [DeYinyv/godot-vlc-rate-fix](https://github.com/DeYinyv/godot-vlc-rate-fix) 是
+[xiSage/godot-vlc](https://github.com/xiSage/godot-vlc) 的自用分支，只包含一处修复，
+不改变任何已有方法的签名，调用方不需要改动代码。
+
+### 改变播放速率后画面冻结
+
+LibVLC 4.0.x 把新的速率作用到时钟和音频上，但不会重启
+`libvlc_video_set_output_callbacks` 建立的视频输出，取帧回调此后再不触发，表现为画面卡住
+而声音继续。`VLCMediaPlayer.set_rate()` 在速率设置成功、且播放器正在播放时，读取当前播放
+时间并做一次**位置不变、精确**（非 fast）的 seek：seek 会重建视频输出，新输出跟随新速率。
+位置不会回退，播放状态、媒体和时间都不变；代价是解码从上一个关键帧开始，最多一个 GOP 的
+音视频内容被跳过。
+
+构建方式与上游一致：`scripts/stage_libvlc.ps1` 准备 LibVLC 运行时，`scripts/build_release.ps1`
+生成 `target/release/godot_vlc.dll`（Windows x64 实测通过）。
+
+### 关于上游
+
+本修复**未向上游提交 PR**。上游可能已经修复了这个问题，或者采用了不同的处理方式；如果上游
+已经修复，本仓库就没有存在的必要。是否采用这里的做法请自行判断，本 fork 只为自己遇到的
+播放场景保留一处小改动。`LICENSE`（LGPL-2.1-or-later）与上游署名链接原样保留。
+
 ## Licensing
 
 This library is LGPL-2.1-or-later; see `LICENSE`.
